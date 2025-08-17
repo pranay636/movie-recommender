@@ -70,16 +70,23 @@ def add_bg_from_local(image_file):
 
 add_bg_from_local("background.png")
 
-# --- Load Movies Dataset ---
+import pandas as pd
+import streamlit as st
+
 @st.cache_data
 def load_movies():
-    df = pd.read_csv("movies_metadata.csv", low_memory=False)
+    # Google Drive file ID
+    file_id = "1sdposT1B7g1HDU5_LTPehQ3VzGsORfbc"
+    url = f"https://drive.google.com/uc?id={file_id}"
+    
+    df = pd.read_csv(url, low_memory=False)
     df = df.dropna(subset=["title", "overview"])  # remove missing
     df = df.reset_index(drop=True)
     return df
 
 df = load_movies()
 movie_list = sorted(df["title"].unique().tolist())
+
 
 # --- Build TF-IDF (no cosine_sim precompute) ---
 @st.cache_resource
