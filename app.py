@@ -70,25 +70,20 @@ def add_bg_from_local(image_file):
 
 add_bg_from_local("background.png")
 
-import pandas as pd
-import streamlit as st
-
+# --- Load Movies ---
 @st.cache_data
 def load_movies():
-    # Google Drive file ID
     file_id = "1sdposT1B7g1HDU5_LTPehQ3VzGsORfbc"
     url = f"https://drive.google.com/uc?id={file_id}"
-    
     df = pd.read_csv(url, low_memory=False)
-    df = df.dropna(subset=["title", "overview"])  # remove missing
+    df = df.dropna(subset=["title", "overview"])  
     df = df.reset_index(drop=True)
     return df
 
 df = load_movies()
 movie_list = sorted(df["title"].unique().tolist())
 
-
-# --- Build TF-IDF (no cosine_sim precompute) ---
+# --- Build TF-IDF ---
 @st.cache_resource
 def build_tfidf(df):
     tfidf = TfidfVectorizer(stop_words="english")
@@ -97,22 +92,19 @@ def build_tfidf(df):
 
 tfidf, tfidf_matrix = build_tfidf(df)
 
-# --- Recommendation Function ---
+# --- Recommendation Functions ---
 def get_recommendations(title, mood, df, tfidf_matrix, top_n=10):
     if title not in df["title"].values:
         return []
 
     idx = df.index[df["title"] == title][0]
 
-    # Compute similarity only for this movie
     sim_scores = linear_kernel(tfidf_matrix[idx], tfidf_matrix).flatten()
-    sim_indices = sim_scores.argsort()[-50:][::-1]  # top 50
+    sim_indices = sim_scores.argsort()[-50:][::-1]  
     recs = df.iloc[sim_indices]
 
-    # Remove the movie itself
     recs = recs[recs["title"] != title]
 
-    # Mood filter → map moods to genres
     mood_map = {
         "Happy": "Comedy",
         "Sad": "Drama",
@@ -129,42 +121,57 @@ def get_recommendations(title, mood, df, tfidf_matrix, top_n=10):
 
     return recs["title"].head(top_n).tolist()
 
-# --- Main app ---
+def recommend_by_mood(mood, df, top_n=10):
+    mood_map = {
+        "Happy": "Comedy",
+        "Sad": "Drama",
+        "Adventurous": "Adventure",
+        "Romantic": "Romance",
+        "Thriller": "Thriller"
+    }
+    genre = mood_map.get(mood, None)
+    if genre:
+        recs = df[df["genres"].astype(str).str.contains(genre, case=False, na=False)]
+        return recs["title"].drop_duplicates().head(top_n).tolist()
+    return []
+
+# --- Main App ---
 st.title("🎬 Movie Recommender")
 
 st.subheader("Step 1 · Choose your mood")
 mood = st.selectbox("How are you feeling today?", ["Happy", "Sad", "Adventurous", "Romantic", "Thriller"])
 
-st.subheader("Step 2 · Enter a movie you like")
+st.subheader("Step 2 · Enter a movie you like (optional)")
 movie_name = st.selectbox(
-    "Search or select your favorite movie",
-    options=movie_list,
-    index=None,
-    placeholder="Start typing to search..."
+    "Search or select your favorite movie (optional)",
+    options=["-- No specific movie --"] + movie_list,
+    index=0
 )
 
 if st.button("Get Recommendations"):
-    if not movie_name:
-        st.warning("⚠ Please enter a movie name before continuing.")
+    if movie_name == "-- No specific movie --":
+        recs = recommend_by_mood(mood, df, top_n=10)
+        based_on_text = "Mood only"
     else:
         recs = get_recommendations(movie_name, mood, df, tfidf_matrix, top_n=10)
+        based_on_text = movie_name
 
-        st.subheader("Step 3 · Your 10 recommendations")
-        if recs:
-            st.markdown(
-                f"""
-                <div class="recommend-card">
-                    <h4>Mood: {mood}</h4>
-                    <h4>Based on: {movie_name}</h4>
-                    <h3>🍿 Recommended Movies</h3>
-                    <ol>
-                        {''.join([f"<li>{m}</li>" for m in recs])}
-                    </ol>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        else:
-            st.error("❌ Sorry, no recommendations found for this combination.")
+    st.subheader("Step 3 · Your 10 recommendations")
+    if recs:
+        st.markdown(
+            f"""
+            <div class="recommend-card">
+                <h4>Mood: {mood}</h4>
+                <h4>Based on: {based_on_text}</h4>
+                <h3>🍿 Recommended Movies</h3>
+                <ol>
+                    {''.join([f"<li>{m}</li>" for m in recs])}
+                </ol>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.error("❌ Sorry, no recommendations found for this combination.")
 
-        st.button("Start Over 🔄")
+    st.button("Start Over 🔄")
